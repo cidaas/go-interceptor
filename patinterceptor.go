@@ -1,10 +1,10 @@
 package cidaasinterceptor
 
 import (
-	"context"
 	"log"
-	"net/http"
 	"strings"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // PatInterceptor to secure APIs based on OAuth 2.0 with PAT (Personal Access Token) support
@@ -28,23 +28,21 @@ func NewPatInterceptor(opts Options) (*PatInterceptor, error) {
 
 // VerifyTokenByIntrospect (check for exp time, issuer and scopes, roles and groups)
 // using the accesspass-srv/pat/introspect endpoint
-func (m *PatInterceptor) VerifyTokenByIntrospect(next http.Handler, apiOptions SecurityOptions) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (m *PatInterceptor) VerifyTokenByIntrospect(apiOptions SecurityOptions) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
 		// get token from auth header
-		tokenString, err := getTokenFromAuthHeader(r)
-		if err != nil { // error getting Token from auth header
-			log.Printf("Error getting token from Header: %v", err)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
+		tokenString := getToken(ctx.Request())
+		if tokenString == "" { // error getting Token from auth header
+			log.Printf("Error getting token from Header")
+			return ctx.Status(fiber.StatusUnauthorized).SendString("Unauthorized")
 		}
 		tokenData := m.introspectToken(tokenString, apiOptions)
 		if tokenData == nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
+			return ctx.Status(fiber.StatusUnauthorized).SendString("Unauthorized")
 		}
-		rWithTokenData := r.WithContext(context.WithValue(r.Context(), TokenDataKey, *tokenData))
-		next.ServeHTTP(w, rWithTokenData)
-	})
+		ctx.Locals(FiberTokenDataKey, *tokenData)
+		return ctx.Next()
+	}
 }
 
 // introspectToken validates the token using introspection via accesspass-srv/pat/introspect endpoint

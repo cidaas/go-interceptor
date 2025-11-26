@@ -697,7 +697,7 @@ func main()  {
 
 **Attached an example how to secure an API with PAT (Personal Access Token) tokens:**
 
-> **Note:** PAT tokens can only be validated via token introspection, not with signature verification. PAT tokens and must have `TokenTypeHint` set to `"pat"`. The PAT interceptor uses `http.Handler`, so it can be used with Fiber via the `fiber.Adaptor` function.
+> **Note:** PAT tokens can only be validated via token introspection, not with signature verification. PAT tokens must have `TokenTypeHint` set to `"pat"`. The PAT interceptor uses `fiber.Handler` directly, similar to `FiberInterceptor`.
 
 #### Version 2.x.x
 

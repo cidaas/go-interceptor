@@ -33,8 +33,8 @@ func TestPatInterceptor_IntrospectHandler_NoToken(t *testing.T) {
 	interceptor, err := NewPatInterceptor(Options{BaseURI: uri, Debug: true})
 	assert.NoError(t, err)
 	assert.NotNil(t, interceptor)
-	rr := doHTTPRequest(t, "", interceptor.VerifyTokenByIntrospect(http.HandlerFunc(healthCheckHandler), SecurityOptions{Scopes: []string{"profile"}}))
-	assert.Equal(t, http.StatusUnauthorized, rr.Result().StatusCode)
+	res := doFiberRequest(t, "", interceptor.VerifyTokenByIntrospect(SecurityOptions{Scopes: []string{"profile"}}))
+	assert.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
 func TestPatInterceptor_IntrospectHandler_InvalidToken(t *testing.T) {
@@ -48,8 +48,8 @@ func TestPatInterceptor_IntrospectHandler_InvalidToken(t *testing.T) {
 	defer closeIntrospectSrv()
 	// Override BaseURI to point to mock server for testing
 	interceptor.Options.BaseURI = introspectURI
-	rr := doHTTPRequest(t, token, interceptor.VerifyTokenByIntrospect(http.HandlerFunc(healthCheckHandler), SecurityOptions{Scopes: []string{"profile"}}))
-	assert.Equal(t, http.StatusUnauthorized, rr.Result().StatusCode)
+	res := doFiberRequest(t, token, interceptor.VerifyTokenByIntrospect(SecurityOptions{Scopes: []string{"profile"}}))
+	assert.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
 func TestPatInterceptor_IntrospectHandler_ValidToken(t *testing.T) {
@@ -63,13 +63,13 @@ func TestPatInterceptor_IntrospectHandler_ValidToken(t *testing.T) {
 	defer closeIntrospectSrv()
 	// Override BaseURI to point to mock server for testing
 	interceptor.Options.BaseURI = introspectURI
-	rr := doHTTPRequest(t, token, interceptor.VerifyTokenByIntrospect(http.HandlerFunc(healthCheckHandler), SecurityOptions{Scopes: []string{"profile"}}))
-	assert.Equal(t, http.StatusOK, rr.Result().StatusCode)
+	res := doFiberRequest(t, token, interceptor.VerifyTokenByIntrospect(SecurityOptions{Scopes: []string{"profile"}}))
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 	var tokenData TokenData
-	json.NewDecoder(rr.Body).Decode(&tokenData)
+	json.NewDecoder(res.Body).Decode(&tokenData)
 	assert.Equal(t, "clientTest", tokenData.Aud, "Aud in tokenData should be passed as context in request and be equal")
 	assert.Equal(t, "sub", tokenData.Sub, "Sub in tokenData should be passed as context in request and be equal")
-	assert.Equal(t, http.StatusOK, rr.Code, "handler should return 200 status code")
+	assert.Equal(t, http.StatusOK, res.StatusCode, "handler should return 200 status code")
 }
 
 func TestPatInterceptor_IntrospectHandler_IssuerMismatch(t *testing.T) {
@@ -89,8 +89,8 @@ func TestPatInterceptor_IntrospectHandler_IssuerMismatch(t *testing.T) {
 	defer mockServer.Close()
 	// Override BaseURI to point to mock server for testing
 	interceptor.Options.BaseURI = mockServer.URL
-	rr := doHTTPRequest(t, token, interceptor.VerifyTokenByIntrospect(http.HandlerFunc(healthCheckHandler), SecurityOptions{Scopes: []string{"profile"}}))
-	assert.Equal(t, http.StatusUnauthorized, rr.Result().StatusCode)
+	res := doFiberRequest(t, token, interceptor.VerifyTokenByIntrospect(SecurityOptions{Scopes: []string{"profile"}}))
+	assert.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
 func TestPatInterceptor_VerifyPassedData(t *testing.T) {
@@ -131,10 +131,10 @@ func TestPatInterceptor_VerifyPassedData(t *testing.T) {
 	assert.NoError(t, err)
 	// Override BaseURI to point to mock server for testing
 	interceptor.Options.BaseURI = mockServer.URL
-	rr := doHTTPRequest(t, "test-pat-token", interceptor.VerifyTokenByIntrospect(http.HandlerFunc(healthCheckHandler), secOpts))
-	assert.Equal(t, http.StatusOK, rr.Result().StatusCode)
+	res := doFiberRequest(t, "test-pat-token", interceptor.VerifyTokenByIntrospect(secOpts))
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 	var tokenData TokenData
-	json.NewDecoder(rr.Body).Decode(&tokenData)
+	json.NewDecoder(res.Body).Decode(&tokenData)
 	assert.Equal(t, "sub", tokenData.Sub)
 	assert.Equal(t, "clientID", tokenData.Aud)
 }
@@ -157,8 +157,8 @@ func TestPatInterceptor_UsesAccessPassEndpoint(t *testing.T) {
 	assert.NoError(t, err)
 	// Override BaseURI to point to mock server for testing
 	interceptor.Options.BaseURI = mockServer.URL
-	rr := doHTTPRequest(t, "test-pat-token", interceptor.VerifyTokenByIntrospect(http.HandlerFunc(healthCheckHandler), SecurityOptions{}))
-	assert.Equal(t, http.StatusOK, rr.Result().StatusCode)
+	res := doFiberRequest(t, "test-pat-token", interceptor.VerifyTokenByIntrospect(SecurityOptions{}))
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, introspectionPath, calledEndpoint, "Should call "+introspectionPath+" endpoint")
 }
 
