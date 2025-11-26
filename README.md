@@ -14,6 +14,7 @@ The **cidaas-go-interceptor** is lightweight middleware for protecting Go servic
 
 - **Supported frameworks:** `net/http`, `gRPC`, `Fiber`
 - **What it does:** validates OIDC/OAuth 2.0 tokens from cidaas and lets you enforce authorization based on scopes/groups/roles with minimal code.
+- **Token types:** Supports standard access tokens (JWT signature verification or introspection) and PAT (Personal Access Token) tokens (introspection only).
 
 ## How to install
 
@@ -58,12 +59,12 @@ type GroupValidationOptions struct {
 
 #### Breaking changes
 
-* Instead of passing the scopes and roles in order to verify the token, you now need to pass an object with different options, which is explained above
-* Now tokens which have **NO SUB** are rejected by default, if you want to allow this you need to enable the SecurityOptions.AllowAnonymousSub flag, which is *false* by default
+- Instead of passing the scopes and roles in order to verify the token, you now need to pass an object with different options, which is explained above
+- Now tokens which have **NO SUB** are rejected by default, if you want to allow this you need to enable the SecurityOptions.AllowAnonymousSub flag, which is _false_ by default
 
 ## Usage
 
-The cidaas go interceptor can be used to secure APIs which use the net/http package, the fiber web framework, or gRPC in golang. 
+The cidaas go interceptor can be used to secure APIs which use the net/http package, the fiber web framework, or gRPC in golang.
 
 ### gRPC
 
@@ -77,7 +78,7 @@ package main
 import (
     "net"
     "log"
-    
+
     cidaasinterceptor "github.com/Cidaas/go-interceptor/v2"
     "google.golang.org/grpc"
     "google.golang.org/grpc/reflection"
@@ -195,7 +196,7 @@ func (s *VaultService) GetSecret(ctx context.Context, req *pb.GetSecretRequest) 
 
     // Access subject (user ID)
     userID := tokenData.Sub
-    
+
     // Access audience (client ID)
     clientID := tokenData.Aud
 
@@ -410,12 +411,14 @@ cidaasOpts := cidaasinterceptor.Options{
 ```
 
 When debug mode is enabled, the interceptor logs:
+
 - Token scopes and roles
 - Validation decisions
 - Introspection requests and responses
 - JWKS key retrieval
 
 ### net/http
+
 The following examples will show how to use the interceptor if you are using the net/http package for your APIs.
 
 **Attached an example how to secure an API with scopes and roles based on the signature of a token:**
@@ -582,6 +585,7 @@ func main() {
 ```
 
 ### [Fiber](https://github.com/gofiber/fiber)
+
 The following examples will show how to use the interceptor if you are using the fiber web framework for your APIs.
 
 #### How to install
@@ -657,7 +661,6 @@ func main()  {
 }
 ```
 
-
 **Attached an example how to secure an API with groups with the introspect call:**
 
 #### Version 1.x.x
@@ -688,6 +691,39 @@ func main()  {
 	if err != nil {
 		panic(err)
     }
+	app.Listen(":3000")
+}
+```
+
+**Attached an example how to secure an API with PAT (Personal Access Token) tokens:**
+
+> **Note:** PAT tokens can only be validated via token introspection, not with signature verification. PAT tokens and must have `TokenTypeHint` set to `"pat"`. The PAT interceptor uses `http.Handler`, so it can be used with Fiber via the `fiber.Adaptor` function.
+
+#### Version 2.x.x
+
+```go
+func CreateApp() (*fiber.App, error) {
+	patInterceptor, err := cidaasinterceptor.NewPatInterceptor(cidaasinterceptor.Options{
+		BaseURI:  BaseUrl,
+		ClientID: Client_id,
+	})
+	if err != nil {
+		ls.Fatal().Err(err).Msg("can't initialize interceptor")
+	}
+
+	app := fiber.New()
+	root := app.Group(fmt.Sprintf("/%s", base.ServiceName))
+	root.Post("/user", patInterceptor.VerifyTokenByIntrospect(cidaasinterceptor.SecurityOptions{
+		Groups: []cidaasinterceptor.GroupValidationOptions{{GroupID: "yourGroupID"}},
+	}), handler.UserHandler)
+	return app, nil
+}
+
+func main() {
+	app, err := CreateApp()
+	if err != nil {
+		panic(err)
+	}
 	app.Listen(":3000")
 }
 ```
