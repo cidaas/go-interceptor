@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const introspectionPath = "/accesspass-srv/pat/introspect"
+const introspectionPath = "/accesspass-srv/passes/pat/introspect"
 
 func TestNewPatInterceptor_Error(t *testing.T) {
 	interceptor, err := NewPatInterceptor(Options{})

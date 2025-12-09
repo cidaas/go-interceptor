@@ -27,7 +27,7 @@ func NewPatInterceptor(opts Options) (*PatInterceptor, error) {
 }
 
 // VerifyTokenByIntrospect (check for exp time, issuer and scopes, roles and groups)
-// using the accesspass-srv/pat/introspect endpoint
+// using the accesspass-srv/passes/pat/introspect endpoint
 func (m *PatInterceptor) VerifyTokenByIntrospect(apiOptions SecurityOptions) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// get token from auth header
@@ -45,11 +45,11 @@ func (m *PatInterceptor) VerifyTokenByIntrospect(apiOptions SecurityOptions) fib
 	}
 }
 
-// introspectToken validates the token using introspection via accesspass-srv/pat/introspect endpoint
+// introspectToken validates the token using introspection via accesspass-srv/passes/pat/introspect endpoint
 // Uses common introspectTokenWithEndpoint function from introspect.go
 func (m *PatInterceptor) introspectToken(tokenString string, apiOptions SecurityOptions) *TokenData {
-	// Construct the accesspass-srv/pat/introspect endpoint (PAT-specific endpoint)
-	introspectEndpoint := strings.TrimSuffix(m.Options.BaseURI, "/") + "/accesspass-srv/pat/introspect"
+	// Construct the accesspass-srv/passes/pat/introspect endpoint (PAT-specific endpoint)
+	introspectEndpoint := strings.TrimSuffix(m.Options.BaseURI, "/") + "/accesspass-srv/passes/pat/introspect"
 	// Use common introspectTokenWithEndpoint with PAT-specific endpoint and token type hint
 	return introspectTokenWithEndpoint(m.Options, introspectEndpoint, tokenString, apiOptions, "pat")
 }
