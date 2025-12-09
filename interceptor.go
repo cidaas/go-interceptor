@@ -23,11 +23,11 @@ type SecurityOptions struct {
 
 // GroupValidationOptions provides options to allow API access only to certain groups
 type GroupValidationOptions struct {
-	GroupID              string   `json:"groupId"`              // the group id to match
-	GroupType            string   `json:"groupType"`            // the group type to match
-	Roles                []string `json:"roles"`                // the roles to match
-	StrictRoleValidation bool     `json:"strictRoleValidation"` // true indicates that all roles must match
-	StrictValidation     bool     `json:"strictValidation"`     // true indicates that the group id, group type and all roles must match
+	GroupID              string   `json:"groupId,omitempty"`              // the group id to match
+	GroupType            string   `json:"groupType,omitempty"`            // the group type to match
+	Roles                []string `json:"roles,omitempty"`                // the roles to match
+	StrictRoleValidation bool     `json:"strictRoleValidation,omitempty"` // true indicates that all roles must match
+	StrictValidation     bool     `json:"strictValidation,omitempty"`     // true indicates that the group id, group type and all roles must match
 }
 
 // TokenData which can be accessed via the request context and provides the resolved information about the aud and the sub of the token

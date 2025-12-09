@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func verifySignature(opts Options, endpoints cidaasEndpoints, jwks *Jwks, tokenString string, securityOpts SecurityOptions) *TokenData {
@@ -52,15 +52,16 @@ func verifySignature(opts Options, endpoints cidaasEndpoints, jwks *Jwks, tokenS
 			return nil
 		}
 		// verify exp times in token data based on current timestamp
-		if !claims.VerifyExpiresAt(time.Now(), true) {
+		if claims.ExpiresAt != nil && claims.ExpiresAt.Before(time.Now()) {
 			log.Printf("Token expired!, expiration: %v, now: %v", claims.ExpiresAt, time.Now())
 			return nil
 		}
 		// verify issuer in token data based on baseURI given in options of interceptor
-		if !claims.VerifyIssuer(opts.BaseURI, true) {
+		if claims.Issuer != opts.BaseURI {
 			log.Printf("Issuer mismatch, issuer: %v, base URI: %v", claims.Issuer, opts.BaseURI)
 			return nil
 		}
+
 		// check for roles and scopes in token data
 		if !checkScopesAndRoles(claims.Scopes, claims.Roles, securityOpts, isAnonymous) {
 			return nil

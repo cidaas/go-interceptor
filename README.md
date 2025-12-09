@@ -5,15 +5,15 @@
 ![Logo](logo.jpg)
 
 ## About cidaas:
-[cidaas](https://www.cidaas.com)
- is a fast and secure Cloud Identity & Access Management solution that standardises what’s important and simplifies what’s complex.
 
-## Feature set includes:
-* Single Sign On (SSO) based on OAuth 2.0, OpenID Connect, SAML 2.0 
-* Multi-Factor-Authentication with more than 14 authentication methods, including TOTP and FIDO2 
-* Passwordless Authentication 
-* Social Login (e.g. Facebook, Google, LinkedIn and more) as well as Enterprise Identity Provider (e.g. SAML or AD) 
-* Security in Machine-to-Machine (M2M) and IoT
+[cidaas](https://www.cidaas.com) is a cloud-native Identity & Access Management platform for both **Workforce IAM** and **Customer IAM (CIAM)**. It delivers standards-based Single Sign-On, passwordless authentication, multi-factor authentication, consent management, social/enterprise federation, API security for M2M/IoT, and optional identity verification—built to provide secure, low-friction access at scale.
+
+## About this project: cidaas-go-interceptor
+
+The **cidaas-go-interceptor** is lightweight middleware for protecting Go services with cidaas-issued tokens.
+
+- **Supported frameworks:** `net/http`, `gRPC`, `Fiber`
+- **What it does:** validates OIDC/OAuth 2.0 tokens from cidaas and lets you enforce authorization based on scopes/groups/roles with minimal code.
 
 ## How to install
 
@@ -36,7 +36,7 @@ This version allows to secure your APIs by passing **security options** to the i
 type SecurityOptions struct {
 	Roles                 []string                 // roles which are allowed to access this api
 	Scopes                []string                 // scopes which are allowed to acces this api
-	Groups                []GroupValidationOptions // groups which are allowed to acces this api (only possible with introspect)
+	Groups                []GroupValidationOptions // groups which are allowed to acces this api (only possible with introspect, not with signature verification)
 	AllowAnonymousSub     bool                     // false (by default) indicates that tokens which have an anonymous sub are rejected, true indicates that tokens which have an ANONYMOUS sub are allowed (only possible with the signature check for now)
 	StrictRoleValidation  bool                     // by default false, true indicates that all provided roles must match (only possible with introspect)
 	StrictScopeValidation bool                     // by default false, true indicates that all provided scopes must match (also possible with the signature check)
@@ -45,12 +45,14 @@ type SecurityOptions struct {
 }
 
 // GroupValidationOptions provides options to allow API access only to certain groups
+// Note: Group validation only works with token introspection, not with signature verification.
+// Either GroupID or GroupType should be specified (not both) to define the group criteria.
 type GroupValidationOptions struct {
-	GroupID              string   `json:"groupId"`              // the group id to match
-	GroupType            string   `json:"groupType"`            // the group type to match
-	Roles                []string `json:"roles"`                // the roles to match
-	StrictRoleValidation bool     `json:"strictRoleValidation"` // true indicates that all roles must match
-	StrictValidation     bool     `json:"strictValidation"`     // true indicates that the group id, group type and all roles must match
+	GroupID              string   `json:"groupId,omitempty"`              // the group id to match (use either GroupID or GroupType)
+	GroupType            string   `json:"groupType,omitempty"`            // the group type to match (use either GroupID or GroupType)
+	Roles                []string `json:"roles,omitempty"`                // the roles to match
+	StrictRoleValidation bool     `json:"strictRoleValidation,omitempty"` // true indicates that all roles must match
+	StrictValidation     bool     `json:"strictValidation,omitempty"`     // true indicates that the group id, group type and all roles must match
 }
 ```
 
@@ -61,7 +63,357 @@ type GroupValidationOptions struct {
 
 ## Usage
 
-The cidaas go interceptor can be used to secure APIs which use the net/http package or the fiber web framework in golang. 
+The cidaas go interceptor can be used to secure APIs which use the net/http package, the fiber web framework, or gRPC in golang. 
+
+### gRPC
+
+The gRPC interceptor provides OAuth 2.0 token validation for gRPC services. It supports both signature verification and token introspection methods.
+
+#### Basic Setup
+
+```go
+package main
+
+import (
+    "net"
+    "log"
+    
+    cidaasinterceptor "github.com/Cidaas/go-interceptor/v2"
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/reflection"
+)
+
+func main() {
+    // Initialize CIDAAS interceptor
+    cidaasOpts := cidaasinterceptor.Options{
+        BaseURI:  "https://your-cidaas-instance.cidaas.de",
+        ClientID: "your-client-id", // Optional
+        Debug:    false,            // Enable for debugging
+    }
+
+    grpcInterceptor, err := cidaasinterceptor.NewGrpcInterceptor(cidaasOpts)
+    if err != nil {
+        log.Fatal().Err(err).Msg("Failed to initialize CIDAAS gRPC interceptor")
+    }
+
+    // Create gRPC server with interceptor
+    grpcServer := grpc.NewServer(
+        grpc.UnaryInterceptor(grpcInterceptor.VerifyTokenByIntrospect(defaultSecurityOpts)),
+    )
+
+    // Register your services
+    // yourpb.RegisterYourServiceServer(grpcServer, &YourService{})
+
+    // Enable reflection for debugging
+    reflection.Register(grpcServer)
+
+    // Start server
+    lis, err := net.Listen("tcp", ":9090")
+    if err != nil {
+        log.Fatal().Err(err).Msg("Failed to listen")
+    }
+
+    log.Info().Msg("Starting gRPC server on :9090")
+    if err := grpcServer.Serve(lis); err != nil {
+        log.Fatal().Err(err).Msg("Failed to serve gRPC")
+    }
+}
+```
+
+#### Security Options Configuration
+
+```go
+// Default security options for basic authentication
+defaultSecurityOpts := cidaasinterceptor.SecurityOptions{
+    Scopes:                []string{"vault:kms_read", "vault:kms_manage"},
+    Roles:                 []string{"admin", "user"},
+    StrictScopeValidation: false, // Allow any of the scopes
+    StrictRoleValidation:  false, // Allow any of the roles
+    AllowAnonymousSub:     false, // Reject anonymous tokens
+}
+
+// Strict validation - all scopes and roles must match
+strictSecurityOpts := cidaasinterceptor.SecurityOptions{
+    Scopes:                []string{"vault:kms_read", "vault:kms_manage"},
+    Roles:                 []string{"admin"},
+    StrictScopeValidation: true,  // All scopes must be present
+    StrictRoleValidation:  true,  // All roles must be present
+    AllowAnonymousSub:     false,
+}
+```
+
+#### Token Validation Methods
+
+**1. Signature Verification (JWT)**
+
+```go
+// Verify token by signature (faster, no network calls)
+interceptor := grpcInterceptor.VerifyTokenBySignature(cidaasinterceptor.SecurityOptions{
+    Scopes:                []string{"vault:kms_read"},
+    StrictScopeValidation: true,
+    AllowAnonymousSub:     false,
+})
+
+grpcServer := grpc.NewServer(grpc.UnaryInterceptor(interceptor))
+```
+
+**2. Token Introspection (OAuth 2.0)**
+
+```go
+// Verify token by introspection (more secure, validates token status)
+// Note: Group validation only works with introspection, not with signature verification
+interceptor := grpcInterceptor.VerifyTokenByIntrospect(cidaasinterceptor.SecurityOptions{
+	Scopes:                []string{"vault:kms_read", "vault:kms_manage"},
+	Roles:                 []string{"admin", "user"},
+		Groups:                []cidaasinterceptor.GroupValidationOptions{
+			{
+				GroupID:   "vault-users", // Use either GroupID or GroupType, not both
+				Roles:     []string{"user"},
+			},
+		},
+	StrictScopeValidation: false,
+	StrictRoleValidation:  false,
+	StrictGroupValidation: false,
+})
+
+grpcServer := grpc.NewServer(grpc.UnaryInterceptor(interceptor))
+```
+
+#### Accessing Token Data in Service Methods
+
+```go
+type VaultService struct {
+    pb.UnimplementedVaultServiceServer
+}
+
+func (s *VaultService) GetSecret(ctx context.Context, req *pb.GetSecretRequest) (*pb.GetSecretResponse, error) {
+    // Get token data from context
+    tokenData, ok := cidaasinterceptor.GetTokenDataFromGrpcContext(ctx)
+    if !ok {
+        return nil, status.Error(codes.Internal, "token data not found in context")
+    }
+
+    // Access subject (user ID)
+    userID := tokenData.Sub
+    
+    // Access audience (client ID)
+    clientID := tokenData.Aud
+
+    // Your business logic here
+    secret, err := s.getSecretForUser(userID, req.SecretId)
+    if err != nil {
+        return nil, status.Errorf(codes.Internal, "failed to get secret: %v", err)
+    }
+
+    return &pb.GetSecretResponse{
+        Secret: secret,
+    }, nil
+}
+
+// Helper functions for common token data access
+func (s *VaultService) CreateKey(ctx context.Context, req *pb.CreateKeyRequest) (*pb.CreateKeyResponse, error) {
+    // Get subject directly
+    userID, ok := cidaasinterceptor.GetSubFromGrpcContext(ctx)
+    if !ok {
+        return nil, status.Error(codes.Internal, "user ID not found in context")
+    }
+
+    // Get audience directly
+    clientID, ok := cidaasinterceptor.GetAudFromGrpcContext(ctx)
+    if !ok {
+        return nil, status.Error(codes.Internal, "client ID not found in context")
+    }
+
+    // Your business logic here
+    return s.createKeyForUser(userID, req), nil
+}
+```
+
+#### Client Authentication
+
+Clients must include the Bearer token in the gRPC metadata:
+
+```go
+// Client-side code
+import (
+    "context"
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/metadata"
+)
+
+func callSecureService(client pb.VaultServiceClient, token string) error {
+    // Add token to metadata
+    md := metadata.New(map[string]string{
+        "authorization": "Bearer " + token,
+    })
+    ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+    // Make authenticated call
+    resp, err := client.GetSecret(ctx, &pb.GetSecretRequest{
+        SecretId: "my-secret",
+    })
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+```
+
+#### Error Handling
+
+The interceptor returns appropriate gRPC error codes:
+
+- `codes.Unauthenticated`: Invalid or missing token
+- `codes.PermissionDenied`: Token valid but insufficient permissions
+- `codes.Internal`: Configuration or network errors
+
+```go
+// Handle authentication errors in your service
+func (s *VaultService) SecureOperation(ctx context.Context, req *pb.SecureRequest) (*pb.SecureResponse, error) {
+    tokenData, ok := cidaasinterceptor.GetTokenDataFromGrpcContext(ctx)
+    if !ok {
+        return nil, status.Error(codes.Unauthenticated, "authentication required")
+    }
+
+    // Check if user has specific permissions
+    if !s.hasPermission(tokenData.Sub, "admin") {
+        return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
+    }
+
+    // Proceed with operation
+    return s.performSecureOperation(req), nil
+}
+```
+
+#### Advanced Configuration
+
+**Per-Endpoint Security Validation:**
+
+The gRPC interceptor supports per-endpoint security validation, allowing you to define different security requirements for each API endpoint.
+
+```go
+func main() {
+    cidaasOpts := cidaasinterceptor.Options{
+        BaseURI:  "https://your-cidaas-instance.cidaas.de",
+        ClientID: "your-client-id",
+        Debug:    true,
+    }
+
+    grpcInterceptor, err := cidaasinterceptor.NewGrpcInterceptor(cidaasOpts)
+    if err != nil {
+        log.Fatal().Err(err).Msg("Failed to initialize interceptor")
+    }
+
+    // Define per-endpoint security requirements
+    endpointSecurity := func(fullMethod string) cidaasinterceptor.SecurityOptions {
+        switch fullMethod {
+        case "/vault.VaultService/Encrypt":
+            return cidaasinterceptor.SecurityOptions{
+                Scopes:                []string{"vault:kms_manage"},
+                StrictScopeValidation: true,
+            }
+        case "/vault.VaultService/Decrypt":
+            return cidaasinterceptor.SecurityOptions{
+                Scopes:                []string{"vault:kms_read"},
+                StrictScopeValidation: true,
+            }
+        case "/vault.VaultService/GenerateKey":
+            return cidaasinterceptor.SecurityOptions{
+                Scopes:                []string{"vault:kms_manage"},
+                Groups:                []cidaasinterceptor.GroupValidationOptions{
+                    {
+                        GroupID:   "key-management",
+                        Roles:     []string{"admin", "key_manager"},
+                        StrictRoleValidation: false,
+                    },
+                },
+                StrictScopeValidation: true,
+                StrictGroupValidation: false,
+            }
+        case "/vault.VaultService/DeleteKey":
+            return cidaasinterceptor.SecurityOptions{
+                Scopes:                []string{"vault:kms_manage"},
+                Roles:                 []string{"admin"},
+                StrictScopeValidation: true,
+                StrictRoleValidation:  true, // Must have admin role
+            }
+        case "/vault.VaultService/Health":
+            return cidaasinterceptor.SecurityOptions{
+                AllowAnonymousSub: true, // Public endpoint
+            }
+        default:
+            // Default security for unknown endpoints
+            return cidaasinterceptor.SecurityOptions{
+                Scopes:                []string{"vault:kms_read"},
+                StrictScopeValidation: false,
+            }
+        }
+    }
+
+    // Create gRPC server with per-endpoint validation
+    grpcServer := grpc.NewServer(
+        grpc.UnaryInterceptor(
+            grpcInterceptor.VerifyTokenByIntrospectWithEndpointValidation(endpointSecurity),
+        ),
+    )
+
+    // Register services
+    // pb.RegisterVaultServiceServer(grpcServer, &VaultService{})
+}
+```
+
+**Multiple Interceptors with Different Security Levels:**
+
+```go
+func main() {
+    cidaasOpts := cidaasinterceptor.Options{
+        BaseURI:  "https://your-cidaas-instance.cidaas.de",
+        ClientID: "your-client-id",
+        Debug:    true,
+    }
+
+    grpcInterceptor, err := cidaasinterceptor.NewGrpcInterceptor(cidaasOpts)
+    if err != nil {
+        log.Fatal().Err(err).Msg("Failed to initialize interceptor")
+    }
+
+    // Create interceptors for different security levels
+    adminInterceptor := grpcInterceptor.VerifyTokenByIntrospect(cidaasinterceptor.SecurityOptions{
+        Roles:                []string{"admin"},
+        StrictRoleValidation: true,
+    })
+
+    userInterceptor := grpcInterceptor.VerifyTokenByIntrospect(cidaasinterceptor.SecurityOptions{
+        Scopes:                []string{"vault:read", "vault:write"},
+        StrictScopeValidation: false,
+    })
+
+    // Use different interceptors for different services
+    adminServer := grpc.NewServer(grpc.UnaryInterceptor(adminInterceptor))
+    userServer := grpc.NewServer(grpc.UnaryInterceptor(userInterceptor))
+
+    // Register services
+    // pb.RegisterAdminServiceServer(adminServer, &AdminService{})
+    // pb.RegisterUserServiceServer(userServer, &UserService{})
+}
+```
+
+**Debug Mode:**
+
+```go
+cidaasOpts := cidaasinterceptor.Options{
+    BaseURI:  "https://your-cidaas-instance.cidaas.de",
+    ClientID: "your-client-id",
+    Debug:    true, // Enable debug logging
+}
+```
+
+When debug mode is enabled, the interceptor logs:
+- Token scopes and roles
+- Validation decisions
+- Introspection requests and responses
+- JWKS key retrieval
 
 ### net/http
 The following examples will show how to use the interceptor if you are using the net/http package for your APIs.
@@ -188,6 +540,8 @@ func main() {
 
 **Attached an example how to secure an API with groups based on an introspect call to the cidaas instance:**
 
+> **Note:** Group validation only works with token introspection, not with signature verification. This is because group information is not available in JWT tokens and requires a call to the cidaas introspection endpoint.
+
 #### Version 1.x.x
 
 > Not supported
@@ -215,7 +569,9 @@ func main() {
 	}
 	getHandler := http.HandlerFunc(get)
 	api.Handle("", cidaasInterceptor.VerifyTokenByIntrospect(getHandler, cidaasinterceptor.SecurityOptions{
-		Groups: []cidaasinterceptor.GroupValidationOptions{{GroupID: "yourGroupID"}},
+		Groups: []cidaasinterceptor.GroupValidationOptions{
+			{GroupID: "yourGroupID", GroupType: "department"},
+		},
 	})).Methods(http.MethodGet)
 	api.Handle("/user", cidaasInterceptor.VerifyTokenByIntrospect(getHandler, cidaasinterceptor.SecurityOptions{
 		AllowAnonymousSub: true, // add this flag if you want to allow tokens with an anonymous sub
