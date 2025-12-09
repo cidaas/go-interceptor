@@ -1,13 +1,10 @@
 package cidaasinterceptor
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"time"
 
@@ -255,54 +252,7 @@ func (m *GrpcInterceptor) verifySignature(tokenString string, apiOptions Securit
 }
 
 // introspectToken validates the token using introspection
+// Uses common introspectToken function from introspect.go
 func (m *GrpcInterceptor) introspectToken(tokenString string, apiOptions SecurityOptions) *TokenData {
-	introspectReq := introspectRequest{
-		Token:                 tokenString,
-		TokenTypeHint:         "access_token",
-		ClientID:              m.Options.ClientID,
-		Roles:                 apiOptions.Roles,
-		Scopes:                apiOptions.Scopes,
-		Groups:                apiOptions.Groups,
-		StrictRoleValidation:  apiOptions.StrictRoleValidation,
-		StrictScopeValidation: apiOptions.StrictScopeValidation,
-		StrictGroupValidation: apiOptions.StrictGroupValidation,
-		StrictValidation:      apiOptions.StrictValidation,
-	}
-	// marshal token to introspect request and perform POST call to introspect endpoint
-	introspectReqBody, err := json.Marshal(introspectReq)
-	if err != nil {
-		log.Printf("Error mapping introspect request: %v", err)
-		return nil
-	}
-	if m.Options.Debug {
-		log.Printf("IntrospectReqBody: %v", string(introspectReqBody))
-	}
-	// if introspect was not successful log error and return unauthorized
-	resp, err := http.Post(m.endpoints.IntrospectionEndpoint, "application/json", bytes.NewBuffer(introspectReqBody))
-	if err != nil {
-		log.Printf("Error calling introspect: %v", err)
-		return nil
-	}
-	defer resp.Body.Close()
-	// map introspect call response (decode)
-	var introspectRespBody introspectResponse
-	errDec := json.NewDecoder(resp.Body).Decode(&introspectRespBody)
-	if errDec != nil {
-		log.Printf("Error mapping introspect Response: %v", err)
-		return nil
-	}
-	if m.Options.Debug {
-		log.Printf("IntrospectRespBody: %v", introspectRespBody)
-	}
-	// check if token is active, if not return unauthorized, root cause could be that token is expired or revoked
-	if !introspectRespBody.Active {
-		log.Printf("Token Expired/Revoked: Token.Active: %v", introspectRespBody.Active)
-		return nil
-	}
-	// check for issuer in token data
-	if introspectRespBody.Iss != m.Options.BaseURI {
-		log.Println("Issuer mismatch")
-		return nil
-	}
-	return &TokenData{Sub: introspectRespBody.Sub, Aud: introspectRespBody.Aud}
+	return introspectToken(m.Options, m.endpoints, tokenString, apiOptions)
 }

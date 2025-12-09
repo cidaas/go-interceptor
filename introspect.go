@@ -38,9 +38,14 @@ type GroupDetails struct {
 }
 
 func introspectToken(opts Options, endpoints cidaasEndpoints, tokenString string, apiOptions SecurityOptions) *TokenData {
+	return introspectTokenWithEndpoint(opts, endpoints.IntrospectionEndpoint, tokenString, apiOptions, "access_token")
+}
+
+// introspectTokenWithEndpoint performs token introspection with a custom endpoint and token type hint
+func introspectTokenWithEndpoint(opts Options, introspectEndpoint string, tokenString string, apiOptions SecurityOptions, tokenTypeHint string) *TokenData {
 	introspectReq := introspectRequest{
 		Token:                 tokenString,
-		TokenTypeHint:         "access_token",
+		TokenTypeHint:         tokenTypeHint,
 		ClientID:              opts.ClientID,
 		Roles:                 apiOptions.Roles,
 		Scopes:                apiOptions.Scopes,
@@ -58,9 +63,10 @@ func introspectToken(opts Options, endpoints cidaasEndpoints, tokenString string
 	}
 	if opts.Debug {
 		log.Printf("IntrospectReqBody: %v", string(introspectReqBody))
+		log.Printf("Calling introspect endpoint: %v", introspectEndpoint)
 	}
 	// if introspect was not successful log error and return unauthorized
-	resp, err := http.Post(endpoints.IntrospectionEndpoint, "application/json", bytes.NewBuffer(introspectReqBody))
+	resp, err := http.Post(introspectEndpoint, "application/json", bytes.NewBuffer(introspectReqBody))
 	if err != nil {
 		log.Printf("Error calling introspect: %v", err)
 		return nil
