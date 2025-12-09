@@ -32,8 +32,9 @@ type introspectResponse struct {
 
 // GroupDetails represents the group details returned in token
 type GroupDetails struct {
-	GroupID string   `json:"groupId,omitempty"` // group id
-	Roles   []string `json:"roles,omitempty"`   // roles of user in this group
+	GroupID   string   `json:"groupId,omitempty"`   // group id
+	GroupType string   `json:"groupType,omitempty"` // group type
+	Roles     []string `json:"roles,omitempty"`     // roles of user in this group
 }
 
 func introspectToken(opts Options, endpoints cidaasEndpoints, tokenString string, apiOptions SecurityOptions) *TokenData {
