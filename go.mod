@@ -3,7 +3,7 @@ module github.com/Cidaas/go-interceptor/v2
 go 1.24
 
 require (
-	github.com/gofiber/fiber/v2 v2.52.9
+	github.com/gofiber/fiber/v2 v2.52.11
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/stretchr/testify v1.10.0
 	github.com/valyala/fasthttp v1.65.0
